@@ -28,8 +28,9 @@ I am releasing `unreal-rust` on github to develop it in the open.
 
 * 🐧 Linux
 * 🪟 Windows
+* 🍏 MacOS
 
-Potential future platforms: iOS, macOS, Android, html5/browser(possibly)
+Potential future platforms: iOS, Android, html5/browser(possibly)
 
 Consoles are unsupported. I simply can not offer console support as it is a closed off ecosystem. Nor do I have access to any developer kits myself.
 
@@ -71,6 +72,7 @@ git submodule update --init
 Next we need to setup the example
 
 - - Linux `sh setup.sh`
+- - MacOS `./setup.sh`
 - - Windows `setup.bat`
 
 This will symlink the `RustPlugin` into the unreal `example/RustExample/Plugin` folder.
@@ -88,12 +90,14 @@ This will build the whole project. This also produces our dll that we are going 
 Copy the dll/so file into the project 
 
 * Linux: `cp target/release/libunreal_rust_example.so example/RustExample/Binaries/rustplugin.so`
+* MacOS: `cp target/release/libunreal_rust_example.dylib example/RustExample/Binaries/rustplugin.so`
 * Windows: `copy .\target\release\unreal_rust_example.dll .\example\RustExample\Binaries\rustplugin.dll`
 
 Now we need to build the unreal example
 
 ```
 cd example/RustExample
+ue4 setroot /Users/Shared/Epic\ Games/UE_5.2
 ue4 build Development Editor
 ```
 
@@ -101,7 +105,8 @@ Now you can run the example with `ue4 run`
 
 ## 🚀 Supported versions
 
-- `5.0`
+- Unreal: `5.2`
+- Rust: `1.71.0`
 
 This project will always try to support the latest version.
 
