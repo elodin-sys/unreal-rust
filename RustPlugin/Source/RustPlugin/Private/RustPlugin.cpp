@@ -27,8 +27,10 @@ static const FName RustPluginTabName("RustPlugin");
 
 FString PlatformExtensionName()
 {
-#if PLATFORM_LINUX || PLATFORM_MAC
+#if PLATFORM_LINUX
 	return FString(TEXT("so"));
+#elif PLATFORM_MAC
+	return FString(TEXT("dylib"));
 #elif PLATFORM_WINDOWS
         return FString(TEXT("dll"));
 #endif

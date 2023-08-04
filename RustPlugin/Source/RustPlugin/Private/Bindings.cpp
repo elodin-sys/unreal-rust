@@ -589,7 +589,7 @@ uint32_t GetEditorComponentUObject(const AActorOpaque* actor, Uuid uuid, Utf8Str
 	if (Prop == nullptr)
 		return 0;
 
-	if (Prop->Tag == ERustPropertyTag::Class)
+	if (Prop->Tag == ERustPropertyTag::EClass)
 	{
 		*out = static_cast<UObjectOpague*>(Prop->Class.Get());
 		return 1;

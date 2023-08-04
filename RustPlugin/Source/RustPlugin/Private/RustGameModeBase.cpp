@@ -42,7 +42,7 @@ ARustGameModeBase::ARustGameModeBase()
 
 void ARustGameModeBase::OnActorSpawnedHandler(AActor* actor)
 {
-	EventType Type = EventType::ActorSpawned;
+	UEventType Type = UEventType::ActorSpawned;
 	ActorSpawnedEvent Event;
 	Event.actor = (AActorOpaque*)actor;
 	GetRustModule().Plugin.Rust.unreal_event(&Type, (void*)&Event);
@@ -50,7 +50,7 @@ void ARustGameModeBase::OnActorSpawnedHandler(AActor* actor)
 
 void ARustGameModeBase::OnActorBeginOverlap(AActor* OverlappedActor, AActor* OtherActor)
 {
-	EventType Type = EventType::ActorBeginOverlap;
+	UEventType Type = UEventType::ActorBeginOverlap;
 	ActorBeginOverlap Event;
 	Event.overlapped_actor = (AActorOpaque*)OverlappedActor;
 	Event.other = (AActorOpaque*)OtherActor;
@@ -59,7 +59,7 @@ void ARustGameModeBase::OnActorBeginOverlap(AActor* OverlappedActor, AActor* Oth
 
 void ARustGameModeBase::OnActorEndOverlap(AActor* OverlappedActor, AActor* OtherActor)
 {
-	EventType Type = EventType::ActorEndOverlap;
+	UEventType Type = UEventType::ActorEndOverlap;
 	ActorEndOverlap Event;
 	Event.overlapped_actor = (AActorOpaque*)OverlappedActor;
 	Event.other = (AActorOpaque*)OtherActor;
@@ -68,7 +68,7 @@ void ARustGameModeBase::OnActorEndOverlap(AActor* OverlappedActor, AActor* Other
 
 void ARustGameModeBase::OnActorHit(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit)
 {
-	EventType Type = EventType::ActorOnHit;
+	UEventType Type = UEventType::ActorOnHit;
 	ActorHitEvent Event;
 	Event.self_actor = (AActorOpaque*)SelfActor;
 	Event.other = (AActorOpaque*)OtherActor;
@@ -78,7 +78,7 @@ void ARustGameModeBase::OnActorHit(AActor* SelfActor, AActor* OtherActor, FVecto
 
 void ARustGameModeBase::OnActorDestroyed(AActor* Actor)
 {
-	EventType Type = EventType::ActorDestroy;
+	UEventType Type = UEventType::ActorDestroy;
 	ActorDestroyEvent Event;
 	Event.actor = (AActorOpaque*)Actor;
 	GetRustModule().Plugin.Rust.unreal_event(&Type, (void*)&Event);

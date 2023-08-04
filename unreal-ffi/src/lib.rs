@@ -280,7 +280,7 @@ pub type GetVelocityRustFn =
     unsafe extern "C" fn(actor: *const AActorOpaque, velocity: &mut Vector3);
 
 #[repr(u32)]
-pub enum EventType {
+pub enum UEventType {
     ActorSpawned = 0,
     ActorBeginOverlap = 1,
     ActorEndOverlap = 2,
@@ -326,7 +326,7 @@ pub struct RustBindings {
     pub allocate_fns: AllocateFns,
 }
 
-pub type UnrealEventFn = unsafe extern "C" fn(ty: *const EventType, data: *const c_void);
+pub type UnrealEventFn = unsafe extern "C" fn(ty: *const UEventType, data: *const c_void);
 
 #[repr(u32)]
 pub enum ReflectionType {

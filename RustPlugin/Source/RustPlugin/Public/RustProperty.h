@@ -19,7 +19,7 @@ enum ERustPropertyTag
 	Float,
 	Vector,
 	Quat,
-	Class,
+	EClass,
 	Sound
 };
 

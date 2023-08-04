@@ -39,7 +39,7 @@ void FRustProperty::Initialize(TSharedPtr<IPropertyHandle> Handle, ReflectionTyp
 	}
 	if (Type == ReflectionType::UClass)
 	{
-		HandleTag->SetValue(ERustPropertyTag::Class);
+		HandleTag->SetValue(ERustPropertyTag::EClass);
 	}
 	if (Type == ReflectionType::USound)
 	{
@@ -147,7 +147,7 @@ void FDynamicRustComponent::Render(TSharedRef<IPropertyHandle> MapHandle, IDetai
 					.ContentPadding(0)
 					[
 						SNew(SImage)
-						.Image(FEditorStyle::GetBrush("Icons.Delete"))
+						//.Image(FEditorStyle::GetBrush("Icons.Delete"))
 						.ColorAndOpacity(FSlateColor::UseForeground())
 					]
 				]
@@ -193,7 +193,7 @@ void FDynamicRustComponent::Render(TSharedRef<IPropertyHandle> MapHandle, IDetai
 				ComponentGroup.AddPropertyRow(QuatProperty.ToSharedRef()).DisplayName(
 					FText::FromString(FieldPropertyName));
 			}
-			if (Tag == ERustPropertyTag::Class)
+			if (Tag == ERustPropertyTag::EClass)
 			{
 				auto ClassProperty = RustPropertyEntry->GetChildHandle(
 					GET_MEMBER_NAME_CHECKED(FRustProperty, Class));

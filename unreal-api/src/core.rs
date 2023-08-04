@@ -1,5 +1,5 @@
 use bevy_ecs::{prelude::*, system::Command};
-use ffi::{ActorComponentPtr, ActorComponentType, EventType, Quaternion};
+use ffi::{ActorComponentPtr, ActorComponentType, UEventType, Quaternion};
 use std::ffi::c_void;
 
 use crate::{
@@ -137,16 +137,16 @@ pub struct ActorDestroyEvent {
     pub actor: ActorPtr,
 }
 
-pub unsafe extern "C" fn unreal_event(ty: *const EventType, data: *const c_void) {
+pub unsafe extern "C" fn unreal_event(ty: *const UEventType, data: *const c_void) {
     if let Some(global) = crate::module::MODULE.as_mut() {
         match *ty {
-            EventType::ActorSpawned => {
+            UEventType::ActorSpawned => {
                 let actor_spawned_event = data as *const ffi::ActorSpawnedEvent;
                 global.core.module.world.send_event(ActorSpawnedEvent {
                     actor: ActorPtr((*actor_spawned_event).actor),
                 });
             }
-            EventType::ActorBeginOverlap => {
+            UEventType::ActorBeginOverlap => {
                 let overlap = data as *const ffi::ActorBeginOverlap;
                 global
                     .core
@@ -157,14 +157,14 @@ pub unsafe extern "C" fn unreal_event(ty: *const EventType, data: *const c_void)
                         other: ActorPtr((*overlap).other),
                     });
             }
-            EventType::ActorEndOverlap => {
+            UEventType::ActorEndOverlap => {
                 let overlap = data as *const ffi::ActorEndOverlap;
                 global.core.module.world.send_event(OnActorEndOverlapEvent {
                     overlapped_actor: ActorPtr((*overlap).overlapped_actor),
                     other: ActorPtr((*overlap).other),
                 });
             }
-            EventType::ActorOnHit => {
+            UEventType::ActorOnHit => {
                 let hit = data as *const ffi::ActorHitEvent;
                 global.core.module.world.send_event(ActorHitEvent {
                     self_actor: ActorPtr((*hit).self_actor),
@@ -172,7 +172,7 @@ pub unsafe extern "C" fn unreal_event(ty: *const EventType, data: *const c_void)
                     normal_impulse: (*hit).normal_impulse.into(),
                 });
             }
-            EventType::ActorDestroy => {
+            UEventType::ActorDestroy => {
                 let destroy = data as *const ffi::ActorDestroyEvent;
                 global.core.module.world.send_event(ActorDestroyEvent {
                     actor: ActorPtr((*destroy).actor),
