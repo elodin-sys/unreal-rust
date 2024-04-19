@@ -1,25 +1,26 @@
 use std::collections::HashMap;
 
+use bevy::app::{App, Startup, Update};
 use bevy_ecs::prelude::*;
 use unreal_api::api::UnrealApi;
 use unreal_api::core::{ActorHitEvent, Despawn};
+use unreal_api::module::ReflectionRegistry;
 use unreal_api::registry::USound;
 use unreal_api::sound::{play_sound_at_location, SoundSettings};
 use unreal_api::Component;
 use unreal_api::{
-    core::{ActorComponent, ActorPtr, CoreStage, ParentComponent, TransformComponent},
+    core::{ActorComponent, ActorPtr, ParentComponent, TransformComponent},
     ffi::{self, UClassOpague},
     input::Input,
     math::{Quat, Vec3},
-    module::{bindings, InitUserModule, Module, UserModule},
-    register_components,
+    module::{bindings, InitUserModule, UserModule},
 };
 use unreal_movement::{
     CharacterConfigComponent, CharacterControllerComponent, MovementComponent, MovementPlugin,
 };
 
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Class {
     Player = 0,
 }
@@ -33,7 +34,7 @@ impl Class {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct ClassesResource {
     classes: HashMap<*mut ffi::UClassOpague, Class>,
 }
@@ -115,11 +116,9 @@ fn register_class_resource(mut commands: Commands) {
     commands.insert_resource(classes_resource);
 }
 
-fn register_hit_events(mut query: Query<(&mut ActorComponent, Added<PlaySoundOnImpactComponent>)>) {
-    for (mut actor, added) in &mut query {
-        if added {
-            actor.register_on_hit();
-        }
+fn register_hit_events(mut query: Query<&mut ActorComponent, Added<PlaySoundOnImpactComponent>>) {
+    for mut actor in &mut query {
+        actor.register_on_hit();
     }
 }
 
@@ -129,7 +128,7 @@ fn play_sound_on_hit(
     query: Query<(&TransformComponent, &PlaySoundOnImpactComponent)>,
     mut commands: Commands,
 ) {
-    for event in events.iter() {
+    for event in events.read() {
         if event.normal_impulse.length() <= PlaySoundOnImpactComponent::MINIMUM_FORCE {
             continue;
         }
@@ -165,7 +164,7 @@ fn spawn_class(
             if let Some(&class) = class_resource.classes.get(&class_ptr) {
                 match class {
                     Class::Player => {
-                        commands.entity(entity).insert_bundle((
+                        commands.entity(entity).insert((
                             CharacterConfigComponent::default(),
                             CharacterControllerComponent::default(),
                             MovementComponent::default(),
@@ -220,9 +219,7 @@ fn update_controller_view(
     camera: Query<(&ParentComponent, &TransformComponent, &CameraComponent)>,
 ) {
     for (parent, spatial, _) in camera.iter() {
-        if let Ok(mut movement) =
-            movement.get_component_mut::<CharacterControllerComponent>(parent.parent)
-        {
+        if let Ok(mut movement) = movement.get_mut(parent.parent) {
             movement.camera_view = spatial.rotation;
         }
     }
@@ -255,12 +252,9 @@ fn rotate_camera(mut query: Query<(&mut TransformComponent, &mut CameraComponent
 
 fn spawn_camera(
     mut commands: Commands,
-    mut query: Query<(Entity, &ActorComponent, Added<CharacterControllerComponent>)>,
+    mut query: Query<(Entity, &ActorComponent), Added<CharacterControllerComponent>>,
 ) {
-    for (entity, _, added) in query.iter_mut() {
-        if !added {
-            continue;
-        }
+    for (entity, _) in query.iter_mut() {
         let pos = Vec3::new(-2587.0, -1800.0, 150.0);
         unsafe {
             let actor = (bindings().spawn_actor)(
@@ -270,7 +264,7 @@ fn spawn_camera(
                 Vec3::ONE.into(),
             );
             (bindings().actor_fns.set_view_target)(actor);
-            commands.spawn().insert_bundle((
+            commands.spawn((
                 TransformComponent {
                     position: pos,
                     ..Default::default()
@@ -290,13 +284,8 @@ fn update_camera(
     mut spatial_query: Query<&mut TransformComponent>,
 ) {
     for (entity, parent, camera) in query.iter_mut() {
-        let spatial_parent = spatial_query
-            .get_component::<TransformComponent>(parent.parent)
-            .ok()
-            .cloned();
-        let spatial = spatial_query
-            .get_component_mut::<TransformComponent>(entity)
-            .ok();
+        let spatial_parent = spatial_query.get(parent.parent).ok().cloned();
+        let spatial = spatial_query.get_mut(entity).ok();
         if let (Some(mut spatial), Some(parent)) = (spatial, spatial_parent) {
             let local_offset = match camera.mode {
                 CameraMode::ThirdPerson => spatial.rotation * Vec3::new(-500.0, 0.0, 150.0),
@@ -317,33 +306,35 @@ impl InitUserModule for MyModule {
 }
 
 impl UserModule for MyModule {
-    fn initialize(&self, module: &mut Module) {
-        register_components! {
-            CharacterSoundsComponent,
-            PlaySoundOnImpactComponent,
-            CameraComponent,
-            => module
+    fn initialize(&self, app: &mut App) {
+        let mut registry = app
+            .world
+            .get_resource_or_insert_with(ReflectionRegistry::default);
+        registry.register::<CharacterSoundsComponent>();
+        registry.register::<PlaySoundOnImpactComponent>();
+        registry.register::<CameraComponent>();
 
-        };
-
-        module
-            .add_plugin(MovementPlugin)
-            .add_startup_system_set(
-                SystemSet::new()
-                    .with_system(register_class_resource)
-                    .with_system(register_player_input)
-                    .with_system(register_hit_events),
+        app.add_plugins(MovementPlugin)
+            .init_resource::<ClassesResource>()
+            .add_systems(
+                Startup,
+                (
+                    register_class_resource,
+                    register_player_input,
+                    register_hit_events,
+                ),
             )
-            .add_system_set_to_stage(
-                CoreStage::Update,
-                SystemSet::new()
-                    .with_system(spawn_class)
-                    .with_system(spawn_camera)
-                    .with_system(update_controller_view)
-                    .with_system(rotate_camera)
-                    .with_system(update_camera.after(rotate_camera))
-                    .with_system(toggle_camera)
-                    .with_system(play_sound_on_hit),
+            .add_systems(
+                Update,
+                (
+                    spawn_class,
+                    spawn_camera,
+                    update_controller_view,
+                    rotate_camera,
+                    update_camera.after(rotate_camera),
+                    toggle_camera,
+                    play_sound_on_hit,
+                ),
             );
     }
 }

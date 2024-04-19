@@ -1,16 +1,16 @@
-use bevy_ecs::{prelude::*, query::WorldQuery};
+use bevy::app::{App, Update};
+use bevy::prelude::Plugin;
+use bevy_ecs::{prelude::*, query::QueryData};
 use unreal_api::api::{SweepHit, SweepParams, UnrealApi};
+use unreal_api::module::ReflectionRegistry;
 use unreal_api::Component;
 use unreal_api::{
-    core::{ActorComponent, CoreStage, Frame, TransformComponent},
+    core::{ActorComponent, Frame, TransformComponent},
     ffi,
     input::Input,
     log::LogCategory,
     math::{Quat, Vec3, Vec3Swizzles},
-    module::Module,
     physics::PhysicsComponent,
-    plugin::Plugin,
-    register_components,
 };
 fn project_onto_plane(dir: Vec3, normal: Vec3) -> Vec3 {
     dir - normal * Vec3::dot(dir, normal)
@@ -189,8 +189,8 @@ fn do_gliding(
     }
 }
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
+#[derive(QueryData)]
+#[query_data(mutable)]
 pub struct MovementQuery {
     entity: Entity,
     actor: &'static ActorComponent,
@@ -452,18 +452,18 @@ fn update_movement_component(
 pub struct MovementPlugin;
 
 impl Plugin for MovementPlugin {
-    fn build(&self, module: &mut Module) {
-        register_components! {
-            MovementComponent,
-            CharacterConfigComponent,
-            => module
-        };
-
-        module.add_system_set_to_stage(
-            CoreStage::Update,
-            SystemSet::new()
-                .with_system(character_control_system)
-                .with_system(update_movement_component.after(character_control_system)),
+    fn build(&self, app: &mut App) {
+        let mut registry = app
+            .world
+            .get_resource_or_insert_with(ReflectionRegistry::default);
+        registry.register::<MovementComponent>();
+        registry.register::<CharacterConfigComponent>();
+        app.add_systems(
+            Update,
+            (
+                update_movement_component,
+                character_control_system.after(update_movement_component),
+            ),
         );
     }
 }

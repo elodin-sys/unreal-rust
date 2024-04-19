@@ -1,3 +1,4 @@
+use bevy_ecs::system::Resource;
 use unreal_ffi::ActionState;
 
 use crate::module::bindings;
@@ -9,7 +10,7 @@ pub enum Action {
 }
 
 pub type Binding = &'static str;
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct Input {
     axis: HashMap<Binding, f32>,
     action: HashMap<Binding, Action>,

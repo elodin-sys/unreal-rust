@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ffi;
+use bevy_ecs::system::Resource;
 use glam::{Quat, Vec3};
 
 use crate::core::ActorPtr;
@@ -8,7 +9,7 @@ use crate::ecs::entity::Entity;
 use crate::module::bindings;
 use crate::physics::CollisionShape;
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct UnrealApi {
     // TODO: Implement unregister.
     pub actor_to_entity: HashMap<ActorPtr, Entity>,

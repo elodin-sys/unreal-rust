@@ -1,5 +1,8 @@
+use bevy::app::{App, First, Plugin, PluginGroup, PostUpdate, PreUpdate, ScheduleRunnerPlugin};
+use bevy::MinimalPlugins;
+use bevy_ecs::schedule::ScheduleLabel;
 use bevy_ecs::{prelude::*, system::Command};
-use ffi::{ActorComponentPtr, ActorComponentType, UEventType, Quaternion};
+use ffi::{ActorComponentPtr, ActorComponentType, Quaternion, UEventType};
 use std::ffi::c_void;
 
 use crate::{
@@ -7,132 +10,133 @@ use crate::{
     ffi::{self, AActorOpaque},
     input::Input,
     math::{Quat, Vec3},
-    module::{bindings, Module, UserModule},
+    module::{bindings, UserModule},
     physics::PhysicsComponent,
-    plugin::Plugin,
-    register_components,
 };
 
 pub struct UnrealCore {
-    module: Module,
+    app: App,
 }
 
 pub struct CorePlugin;
 
 impl Plugin for CorePlugin {
-    fn build(&self, module: &mut Module) {
-        register_components! {
-            TransformComponent,
-            ActorComponent,
-            PlayerInputComponent,
-            ParentComponent,
-            PhysicsComponent,
-            => module
-        };
+    fn build(&self, app: &mut App) {
+        let mut registry = app
+            .world
+            .get_resource_or_insert_with(ReflectionRegistry::default);
+        registry.register::<TransformComponent>();
+        registry.register::<ActorComponent>();
+        registry.register::<PlayerInputComponent>();
+        registry.register::<ParentComponent>();
+        registry.register::<PhysicsComponent>();
 
-        module
-            .insert_resource(Frame::default())
+        app.insert_resource(Frame::default())
             .insert_resource(Time::default())
             .insert_resource(Input::default())
             .insert_resource(UnrealApi::default())
-            .add_stage(CoreStage::RegisterEvent)
-            .add_stage_after(CoreStage::RegisterEvent, CoreStage::PreUpdate)
-            .add_stage_after(CoreStage::PreUpdate, CoreStage::Update)
-            .add_stage_after(CoreStage::Update, CoreStage::PostUpdate)
+            // .add_stage(CoreStage::RegisterEvent)
+            // .add_stage_after(CoreStage::RegisterEvent, CoreStage::PreUpdate)
+            // .add_stage_after(CoreStage::PreUpdate, CoreStage::Update)
+            // .add_stage_after(CoreStage::Update, CoreStage::PostUpdate)
             // TODO: Order matters here. Needs to be defined after the stages
             .add_event::<OnActorBeginOverlapEvent>()
             .add_event::<OnActorEndOverlapEvent>()
             .add_event::<ActorHitEvent>()
             .add_event::<ActorSpawnedEvent>()
             .add_event::<ActorDestroyEvent>()
-            .add_system_set_to_stage(
-                CoreStage::RegisterEvent,
-                SystemSet::new()
-                    .with_system(process_actor_spawned)
-                    .with_system(process_actor_destroyed),
+            .add_systems(First, (process_actor_spawned, process_actor_destroyed))
+            .add_systems(
+                PreUpdate,
+                (
+                    update_input,
+                    download_transform_from_unreal,
+                    download_physics_from_unreal,
+                ),
             )
-            .add_system_set_to_stage(
-                CoreStage::PreUpdate,
-                SystemSet::new()
-                    .with_system(update_input)
-                    .with_system(download_transform_from_unreal)
-                    .with_system(download_physics_from_unreal),
-            )
-            .add_system_set_to_stage(
-                CoreStage::PostUpdate,
-                SystemSet::new()
-                    .with_system(upload_transform_to_unreal)
-                    .with_system(upload_physics_to_unreal),
+            .add_systems(
+                PostUpdate,
+                (upload_transform_to_unreal, upload_physics_to_unreal),
             );
     }
 }
 
 impl UnrealCore {
     pub fn new(user_module: &dyn UserModule) -> Self {
-        let mut module = Module::new();
-        module.add_plugin(CorePlugin);
-        user_module.initialize(&mut module);
-        Self { module }
+        let mut app = App::new();
+        println!("Creating UnrealCore");
+        app.insert_resource(ReflectionRegistry::default())
+            .add_plugins((
+                MinimalPlugins.set(ScheduleRunnerPlugin::run_once()),
+                CorePlugin,
+            ));
+        //app.update();
+        user_module.initialize(&mut app);
+        Self { app }
     }
 
     pub fn begin_play(&mut self, user_module: &dyn UserModule) {
         *self = Self::new(user_module);
-
-        self.module.startup.run_once(&mut self.module.world);
+        println!("begin play");
+        self.app.update();
+        //self.module.startup.run_once(&mut self.module.world);
     }
     pub fn tick(&mut self, dt: f32) {
-        if let Some(mut frame) = self.module.world.get_resource_mut::<Frame>() {
+        if let Some(mut frame) = self.app.world.get_resource_mut::<Frame>() {
             frame.dt = dt;
         }
-        if let Some(mut time) = self.module.world.get_resource_mut::<Time>() {
+        if let Some(mut time) = self.app.world.get_resource_mut::<Time>() {
             time.time += dt as f64;
         }
-        self.module.schedule.run_once(&mut self.module.world);
-        self.module.world.clear_trackers();
+        self.app.update();
+        self.app.world.clear_trackers();
     }
 }
 
 pub unsafe extern "C" fn retrieve_uuids(ptr: *mut ffi::Uuid, len: *mut usize) {
     if let Some(global) = crate::module::MODULE.as_mut() {
+        let reflection_registry = global
+            .core
+            .app
+            .world
+            .get_resource::<ReflectionRegistry>()
+            .expect("reflection registry not found");
         if ptr.is_null() {
-            *len = global.core.module.reflection_registry.uuid_set.len();
+            *len = reflection_registry.uuid_set.len();
         } else {
             let slice = std::ptr::slice_from_raw_parts_mut(ptr, *len);
-            for (idx, uuid) in global
-                .core
-                .module
-                .reflection_registry
-                .uuid_set
-                .iter()
-                .take(*len)
-                .enumerate()
-            {
+            for (idx, uuid) in reflection_registry.uuid_set.iter().take(*len).enumerate() {
                 (*slice)[idx] = to_ffi_uuid(*uuid);
             }
         }
     }
 }
 
+#[derive(Event)]
 pub struct ActorSpawnedEvent {
     pub actor: ActorPtr,
 }
 
+#[derive(Event)]
 pub struct OnActorBeginOverlapEvent {
     pub overlapped_actor: ActorPtr,
     pub other: ActorPtr,
 }
 
+#[derive(Event)]
 pub struct OnActorEndOverlapEvent {
     pub overlapped_actor: ActorPtr,
     pub other: ActorPtr,
 }
 
+#[derive(Event)]
 pub struct ActorHitEvent {
     pub self_actor: ActorPtr,
     pub other: ActorPtr,
     pub normal_impulse: Vec3,
 }
 
+#[derive(Event)]
 pub struct ActorDestroyEvent {
     pub actor: ActorPtr,
 }
@@ -141,40 +145,41 @@ pub unsafe extern "C" fn unreal_event(ty: *const UEventType, data: *const c_void
     if let Some(global) = crate::module::MODULE.as_mut() {
         match *ty {
             UEventType::ActorSpawned => {
+                println!("Actor spawned");
                 let actor_spawned_event = data as *const ffi::ActorSpawnedEvent;
-                global.core.module.world.send_event(ActorSpawnedEvent {
+                global.core.app.world.send_event(ActorSpawnedEvent {
                     actor: ActorPtr((*actor_spawned_event).actor),
                 });
             }
             UEventType::ActorBeginOverlap => {
+                println!("Actor begin overlap");
                 let overlap = data as *const ffi::ActorBeginOverlap;
-                global
-                    .core
-                    .module
-                    .world
-                    .send_event(OnActorBeginOverlapEvent {
-                        overlapped_actor: ActorPtr((*overlap).overlapped_actor),
-                        other: ActorPtr((*overlap).other),
-                    });
+                global.core.app.world.send_event(OnActorBeginOverlapEvent {
+                    overlapped_actor: ActorPtr((*overlap).overlapped_actor),
+                    other: ActorPtr((*overlap).other),
+                });
             }
             UEventType::ActorEndOverlap => {
+                println!("Actor end overlap");
                 let overlap = data as *const ffi::ActorEndOverlap;
-                global.core.module.world.send_event(OnActorEndOverlapEvent {
+                global.core.app.world.send_event(OnActorEndOverlapEvent {
                     overlapped_actor: ActorPtr((*overlap).overlapped_actor),
                     other: ActorPtr((*overlap).other),
                 });
             }
             UEventType::ActorOnHit => {
+                println!("Actor on hit");
                 let hit = data as *const ffi::ActorHitEvent;
-                global.core.module.world.send_event(ActorHitEvent {
+                global.core.app.world.send_event(ActorHitEvent {
                     self_actor: ActorPtr((*hit).self_actor),
                     other: ActorPtr((*hit).other),
                     normal_impulse: (*hit).normal_impulse.into(),
                 });
             }
             UEventType::ActorDestroy => {
+                println!("Actor destroy");
                 let destroy = data as *const ffi::ActorDestroyEvent;
-                global.core.module.world.send_event(ActorDestroyEvent {
+                global.core.app.world.send_event(ActorDestroyEvent {
                     actor: ActorPtr((*destroy).actor),
                 });
             }
@@ -259,10 +264,17 @@ fn get_field_value(uuid: ffi::Uuid, entity: ffi::Entity, idx: u32) -> Option<Ref
     let uuid = from_ffi_uuid(uuid);
     unsafe {
         let global = crate::module::MODULE.as_mut()?;
-        let reflect = global.core.module.reflection_registry.reflect.get(&uuid)?;
+        let reflection_registry = global
+            .core
+            .app
+            .world
+            .get_resource::<ReflectionRegistry>()
+            .expect("reflection registry not found");
 
-        let entity = Entity::from_bits(entity.id);
-        reflect.get_field_value(&global.core.module.world, entity, idx)
+        let reflect = reflection_registry.reflect.get(&uuid)?;
+
+        let entity = Entity::try_from_bits(entity.id).ok()?;
+        reflect.get_field_value(&global.core.app.world, entity, idx)
     }
 }
 
@@ -270,7 +282,14 @@ unsafe extern "C" fn number_of_fields(uuid: ffi::Uuid, out: *mut u32) -> u32 {
     fn get_number_fields(uuid: ffi::Uuid) -> Option<u32> {
         let global = unsafe { crate::module::MODULE.as_mut() }?;
         let uuid = from_ffi_uuid(uuid);
-        let reflect = global.core.module.reflection_registry.reflect.get(&uuid)?;
+        let reflection_registry = global
+            .core
+            .app
+            .world
+            .get_resource::<ReflectionRegistry>()
+            .expect("reflection registry not found");
+
+        let reflect = reflection_registry.reflect.get(&uuid)?;
         Some(reflect.number_of_fields() as u32)
     }
     let result = std::panic::catch_unwind(|| {
@@ -287,7 +306,14 @@ unsafe extern "C" fn get_type_name(uuid: ffi::Uuid, out: *mut ffi::Utf8Str) -> u
     fn get_type_name(uuid: ffi::Uuid) -> Option<&'static str> {
         let global = unsafe { crate::module::MODULE.as_mut() }?;
         let uuid = from_ffi_uuid(uuid);
-        let reflect = global.core.module.reflection_registry.reflect.get(&uuid)?;
+        let reflection_registry = global
+            .core
+            .app
+            .world
+            .get_resource::<ReflectionRegistry>()
+            .expect("reflection registry not found");
+
+        let reflect = reflection_registry.reflect.get(&uuid)?;
         Some(reflect.name())
     }
     let result = std::panic::catch_unwind(|| {
@@ -304,9 +330,16 @@ unsafe extern "C" fn has_component(entity: ffi::Entity, uuid: ffi::Uuid) -> u32 
     fn has_component(entity: ffi::Entity, uuid: ffi::Uuid) -> Option<u32> {
         let global = unsafe { crate::module::MODULE.as_ref() }?;
         let uuid = from_ffi_uuid(uuid);
-        let reflect = global.core.module.reflection_registry.reflect.get(&uuid)?;
-        let entity = Entity::from_bits(entity.id);
-        Some(reflect.has_component(&global.core.module.world, entity) as u32)
+        let reflection_registry = global
+            .core
+            .app
+            .world
+            .get_resource::<ReflectionRegistry>()
+            .expect("reflection registry not found");
+
+        let reflect = reflection_registry.reflect.get(&uuid)?;
+        let entity = Entity::try_from_bits(entity.id).ok()?;
+        Some(reflect.has_component(&global.core.app.world, entity) as u32)
     }
     let result = std::panic::catch_unwind(|| has_component(entity, uuid).unwrap_or(0));
     result.unwrap_or(0)
@@ -316,11 +349,15 @@ unsafe extern "C" fn is_editor_component(uuid: ffi::Uuid) -> u32 {
     fn is_editor_component_inner(uuid: ffi::Uuid) -> Option<u32> {
         let global = unsafe { crate::module::MODULE.as_mut() }?;
         let uuid = from_ffi_uuid(uuid);
+        let reflection_registry = global
+            .core
+            .app
+            .world
+            .get_resource::<ReflectionRegistry>()
+            .expect("reflection registry not found");
+
         Some(
-            if global
-                .core
-                .module
-                .reflection_registry
+            if reflection_registry
                 .insert_editor_component
                 .contains_key(&uuid)
             {
@@ -338,7 +375,14 @@ unsafe extern "C" fn get_field_name(uuid: ffi::Uuid, idx: u32, out: *mut ffi::Ut
     fn get_field_name(uuid: ffi::Uuid, idx: u32) -> Option<&'static str> {
         let global = unsafe { crate::module::MODULE.as_mut() }?;
         let uuid = from_ffi_uuid(uuid);
-        let reflect = global.core.module.reflection_registry.reflect.get(&uuid)?;
+        let reflection_registry = global
+            .core
+            .app
+            .world
+            .get_resource::<ReflectionRegistry>()
+            .expect("reflection registry not found");
+
+        let reflect = reflection_registry.reflect.get(&uuid)?;
         reflect.get_field_name(idx)
     }
     let result = std::panic::catch_unwind(|| {
@@ -359,7 +403,14 @@ unsafe extern "C" fn get_field_type(
     fn get_field_type(uuid: ffi::Uuid, idx: u32) -> Option<ffi::ReflectionType> {
         let global = unsafe { crate::module::MODULE.as_mut() }?;
         let uuid = from_ffi_uuid(uuid);
-        let reflect = global.core.module.reflection_registry.reflect.get(&uuid)?;
+        let reflection_registry = global
+            .core
+            .app
+            .world
+            .get_resource::<ReflectionRegistry>()
+            .expect("reflection registry not found");
+
+        let reflect = reflection_registry.reflect.get(&uuid)?;
         let ty = reflect.get_field_type(idx)?;
         Some(match ty {
             ReflectType::Bool => ffi::ReflectionType::Bool,
@@ -465,23 +516,23 @@ use unreal_reflect::{
     registry::{ReflectType, ReflectValue},
     Uuid,
 };
-#[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, ScheduleLabel)]
 pub struct StartupStage;
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
-pub enum CoreStage {
-    Startup,
-    RegisterEvent,
-    PreUpdate,
-    Update,
-    PostUpdate,
-}
-#[derive(Default, Debug, Copy, Clone)]
+// #[derive(Debug, Hash, PartialEq, Eq, Clone, ScheduleLabel)]
+// pub enum CoreStage {
+//     Startup,
+//     RegisterEvent,
+//     PreUpdate,
+//     Update,
+//     PostUpdate,
+// }
+#[derive(Default, Debug, Copy, Clone, Resource)]
 pub struct Frame {
     pub dt: f32,
 }
 
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone, Resource)]
 pub struct Time {
     pub time: f64,
 }
@@ -614,16 +665,13 @@ impl<T> Default for UnrealPtr<T> {
         }
     }
 }
+impl<T> Copy for UnrealPtr<T> {}
+
 impl<T> Clone for UnrealPtr<T> {
     fn clone(&self) -> Self {
-        Self {
-            ptr: self.ptr,
-            _m: self._m,
-        }
+        *self
     }
 }
-
-impl<T> Copy for UnrealPtr<T> {}
 
 #[derive(Debug)]
 pub enum Capsule {}
@@ -685,7 +733,7 @@ pub struct Despawn {
 }
 
 impl Command for Despawn {
-    fn write(self, world: &mut World) {
+    fn apply(self, world: &mut World) {
         world.despawn(self.entity);
         if let Some(mut api) = world.get_resource_mut::<UnrealApi>() {
             // If this entity had an actor, we will also remove it from the map. Otherwise
@@ -709,7 +757,7 @@ fn process_actor_destroyed(
     mut reader: EventReader<ActorDestroyEvent>,
     mut commands: Commands,
 ) {
-    for event in reader.iter() {
+    for event in reader.read() {
         if let Some(entity) = api.actor_to_entity.remove(&event.actor) {
             commands.add(Despawn { entity });
         }
@@ -723,8 +771,9 @@ fn process_actor_spawned(
 ) {
     unsafe {
         if let Some(global) = crate::module::MODULE.as_mut() {
-            for &ActorSpawnedEvent { actor } in reader.iter() {
-                let mut entity_cmds = commands.spawn();
+            for &ActorSpawnedEvent { actor } in reader.read() {
+                println!("actor spawned event");
+                let mut entity_cmds = commands.spawn_empty();
 
                 let mut len = 0;
                 (bindings().editor_component_fns.get_editor_components)(
@@ -739,6 +788,7 @@ fn process_actor_spawned(
                     uuids.as_mut_ptr(),
                     &mut len,
                 );
+                println!("len {}", len);
                 // We might have gotten back fewer uuids, so we truncate
                 uuids.truncate(len);
 
@@ -746,20 +796,19 @@ fn process_actor_spawned(
                 // them to the entity
                 for uuid in uuids {
                     let uuid = from_ffi_uuid(uuid);
-                    if let Some(insert) = global
+                    println!("spawn {:?}", uuid);
+                    let reflection_registry = global
                         .core
-                        .module
-                        .reflection_registry
-                        .insert_editor_component
-                        .get(&uuid)
-                    {
+                        .app
+                        .world
+                        .get_resource::<ReflectionRegistry>()
+                        .expect("reflection registry not found");
+                    if let Some(insert) = reflection_registry.insert_editor_component.get(&uuid) {
                         insert.insert_component(actor.0, uuid, &mut entity_cmds);
                     }
                 }
 
-                let entity = entity_cmds
-                    .insert_bundle((ActorComponent { actor }, TransformComponent::default()))
-                    .id();
+                entity_cmds.insert((ActorComponent { actor }, TransformComponent::default()));
 
                 // Create a physics component if the root component is a primitive
                 // component
@@ -771,8 +820,10 @@ fn process_actor_spawned(
                 {
                     let physics_component =
                         PhysicsComponent::new(UnrealPtr::from_raw(root_component.ptr));
-                    commands.entity(entity).insert(physics_component);
+                    entity_cmds.insert(physics_component);
                 }
+
+                let entity = entity_cmds.id();
 
                 api.register_actor(actor, entity);
 

@@ -14,7 +14,7 @@ pub trait InsertEditorComponent {
         &self,
         actor: *const ffi::AActorOpaque,
         uuid: Uuid,
-        commands: &mut EntityCommands<'_, '_, '_>,
+        commands: &mut EntityCommands<'_>,
     );
 }
 

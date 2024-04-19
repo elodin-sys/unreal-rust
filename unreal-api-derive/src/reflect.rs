@@ -108,7 +108,7 @@ pub fn reflect_derive(ast: &DeriveInput) -> proc_macro2::TokenStream {
                         &self,
                         actor: *const unreal_api::ffi::AActorOpaque,
                         uuid: unreal_api::uuid::Uuid,
-                        commands: &mut unreal_api::ecs::system::EntityCommands<'_, '_, '_>,
+                        commands: &mut unreal_api::ecs::system::EntityCommands<'_>
                     ) {
                         use unreal_api::editor_component::GetEditorComponentValue;
                         let component = #struct_ident {
