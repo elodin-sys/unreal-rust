@@ -2,8 +2,9 @@ use bevy::app::{App, First, Plugin, PluginGroup, PostUpdate, PreUpdate, Schedule
 use bevy::transform::components::Transform;
 use bevy::MinimalPlugins;
 use bevy_ecs::schedule::ScheduleLabel;
+use bevy_ecs::system::EntityCommands;
 use bevy_ecs::{prelude::*, system::Command};
-use ffi::{ActorComponentPtr, ActorComponentType, Quaternion, UEventType};
+use ffi::{ActorClass, ActorComponentPtr, ActorComponentType, Quaternion, UEventType};
 use std::collections::HashSet;
 use std::ffi::c_void;
 
@@ -641,6 +642,12 @@ impl ActorPtr {
             name
         }
     }
+
+    pub fn set_view_target(&self) {
+        unsafe {
+            (bindings().actor_fns.set_view_target)(self.0);
+        }
+    }
 }
 unsafe impl Send for ActorPtr {}
 unsafe impl Sync for ActorPtr {}
@@ -759,6 +766,39 @@ impl Command for Despawn {
                 }
             }
         }
+    }
+}
+
+pub trait UnrealCommandExt {
+    fn spawn_actor(
+        &mut self,
+        class: ActorClass,
+        transform: Transform,
+    ) -> (EntityCommands<'_>, ActorPtr);
+}
+
+impl<'w, 's> UnrealCommandExt for Commands<'w, 's> {
+    fn spawn_actor(
+        &mut self,
+        class: ActorClass,
+        transform: Transform,
+    ) -> (EntityCommands<'_>, ActorPtr) {
+        let actor = unsafe {
+            (bindings().spawn_actor)(
+                class,
+                transform.translation.into(),
+                transform.rotation.into(),
+                transform.scale.into(),
+            )
+        };
+        let entity_cmds = self.spawn((
+            transform,
+            UnrealTransform::from(transform),
+            ActorComponent {
+                actor: ActorPtr(actor),
+            },
+        ));
+        (entity_cmds, ActorPtr(actor))
     }
 }
 
