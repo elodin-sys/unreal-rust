@@ -1,4 +1,5 @@
 use bevy::app::{App, First, Plugin, PluginGroup, PostUpdate, PreUpdate, ScheduleRunnerPlugin};
+use bevy::transform::components::Transform;
 use bevy::MinimalPlugins;
 use bevy_ecs::schedule::ScheduleLabel;
 use bevy_ecs::{prelude::*, system::Command};
@@ -26,7 +27,7 @@ impl Plugin for CorePlugin {
         let mut registry = app
             .world
             .get_resource_or_insert_with(ReflectionRegistry::default);
-        registry.register::<TransformComponent>();
+        registry.register::<UnrealTransform>();
         registry.register::<ActorComponent>();
         registry.register::<PlayerInputComponent>();
         registry.register::<ParentComponent>();
@@ -500,7 +501,7 @@ pub extern "C" fn begin_play() -> ffi::ResultCode {
 }
 
 pub fn register_core_components(registry: &mut ReflectionRegistry) {
-    registry.register::<TransformComponent>();
+    registry.register::<UnrealTransform>();
     registry.register::<ActorComponent>();
     registry.register::<PlayerInputComponent>();
     registry.register::<ParentComponent>();
@@ -573,22 +574,33 @@ impl ActorComponent {
 
 #[derive(Default, Debug, Component, Clone)]
 #[uuid = "b8738d9e-ab21-47db-8587-4019b38e35a6"]
-pub struct TransformComponent {
+pub struct UnrealTransform {
     pub position: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
 }
 
-impl TransformComponent {
-    pub fn right(&self) -> Vec3 {
-        self.rotation * Vec3::Y
+impl From<Transform> for UnrealTransform {
+    fn from(value: Transform) -> Self {
+        Self {
+            position: value.translation,
+            rotation: value.rotation,
+            scale: value.scale,
+        }
     }
-    pub fn forward(&self) -> Vec3 {
-        self.rotation * Vec3::X
+}
+
+impl From<UnrealTransform> for Transform {
+    fn from(value: UnrealTransform) -> Self {
+        Self {
+            translation: value.position,
+            rotation: value.rotation,
+            scale: value.scale,
+        }
     }
-    pub fn up(&self) -> Vec3 {
-        self.rotation * Vec3::Z
-    }
+}
+
+impl UnrealTransform {
     pub fn is_nan(&self) -> bool {
         self.position.is_nan() || self.rotation.is_nan() || self.scale.is_nan()
     }
@@ -684,8 +696,10 @@ fn upload_physics_to_unreal(mut query: Query<&mut PhysicsComponent>) {
         physics.download_state();
     }
 }
-fn download_transform_from_unreal(mut query: Query<(&ActorComponent, &mut TransformComponent)>) {
-    for (actor, mut transform) in query.iter_mut() {
+fn download_transform_from_unreal(
+    mut query: Query<(&ActorComponent, &mut UnrealTransform, &mut Transform)>,
+) {
+    for (actor, mut unreal_transform, mut transform) in query.iter_mut() {
         let mut position = ffi::Vector3::default();
         let mut rotation = ffi::Quaternion::default();
         let mut scale = ffi::Vector3::default();
@@ -697,25 +711,29 @@ fn download_transform_from_unreal(mut query: Query<(&ActorComponent, &mut Transf
             &mut scale,
         );
 
-        transform.position = position.into();
-        transform.rotation = rotation.into();
-        transform.scale = scale.into();
-        assert!(!transform.is_nan());
+        unreal_transform.position = position.into();
+        unreal_transform.rotation = rotation.into();
+        unreal_transform.scale = scale.into();
+        *transform = unreal_transform.clone().into();
+        assert!(!unreal_transform.is_nan());
     }
 }
 
-fn upload_transform_to_unreal(query: Query<(Entity, &ActorComponent, &TransformComponent)>) {
-    for (entity, actor, transform) in query.iter() {
+fn upload_transform_to_unreal(
+    mut query: Query<(&ActorComponent, &Transform, &mut UnrealTransform)>,
+) {
+    for (actor, transform, mut unreal_transform) in query.iter_mut() {
+        *unreal_transform = transform.clone().into();
         let is_moveable = unsafe { (bindings().actor_fns.is_moveable)(actor.actor.0) } > 0;
         if !is_moveable {
             continue;
         }
-        assert!(!transform.is_nan());
+        assert!(!unreal_transform.is_nan());
         (bindings().actor_fns.set_spatial_data)(
             actor.actor.0,
-            transform.position.into(),
-            transform.rotation.into(),
-            transform.scale.into(),
+            unreal_transform.position.into(),
+            unreal_transform.rotation.into(),
+            unreal_transform.scale.into(),
         );
     }
 }
@@ -810,7 +828,7 @@ fn process_actor_spawned(
                     }
                 }
 
-                entity_cmds.insert((ActorComponent { actor }, TransformComponent::default()));
+                entity_cmds.insert((ActorComponent { actor }, UnrealTransform::default()));
 
                 // Create a physics component if the root component is a primitive
                 // component

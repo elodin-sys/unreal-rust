@@ -5,7 +5,7 @@ use unreal_api::api::{SweepHit, SweepParams, UnrealApi};
 use unreal_api::module::ReflectionRegistry;
 use unreal_api::Component;
 use unreal_api::{
-    core::{ActorComponent, Frame, TransformComponent},
+    core::{ActorComponent, Frame, UnrealTransform},
     ffi,
     input::Input,
     log::LogCategory,
@@ -194,7 +194,7 @@ fn do_gliding(
 pub struct MovementQuery {
     entity: Entity,
     actor: &'static ActorComponent,
-    transform: &'static mut TransformComponent,
+    transform: &'static mut UnrealTransform,
     physics: &'static PhysicsComponent,
     controller: &'static mut CharacterControllerComponent,
     config: &'static CharacterConfigComponent,

@@ -9,7 +9,7 @@ use unreal_api::registry::USound;
 use unreal_api::sound::{play_sound_at_location, SoundSettings};
 use unreal_api::Component;
 use unreal_api::{
-    core::{ActorComponent, ActorPtr, ParentComponent, TransformComponent},
+    core::{ActorComponent, ActorPtr, ParentComponent, UnrealTransform},
     ffi::{self, UClassOpague},
     input::Input,
     math::{Quat, Vec3},
@@ -125,7 +125,7 @@ fn register_hit_events(mut query: Query<&mut ActorComponent, Added<PlaySoundOnIm
 fn play_sound_on_hit(
     api: Res<UnrealApi>,
     mut events: EventReader<ActorHitEvent>,
-    query: Query<(&TransformComponent, &PlaySoundOnImpactComponent)>,
+    query: Query<(&UnrealTransform, &PlaySoundOnImpactComponent)>,
     mut commands: Commands,
 ) {
     for event in events.read() {
@@ -189,7 +189,7 @@ fn toggle_camera(
     input: Res<Input>,
     mut camera_query: Query<(Entity, &mut CameraComponent, &ParentComponent)>,
     mut actor_query: Query<&mut ActorComponent>,
-    sound: Query<(&TransformComponent, &CharacterSoundsComponent)>,
+    sound: Query<(&UnrealTransform, &CharacterSoundsComponent)>,
 ) {
     if input.is_action_pressed(PlayerInput::TOGGLE_CAMERA) {
         for (entity, mut camera, parent) in camera_query.iter_mut() {
@@ -216,7 +216,7 @@ fn toggle_camera(
 }
 fn update_controller_view(
     mut movement: Query<&mut CharacterControllerComponent>,
-    camera: Query<(&ParentComponent, &TransformComponent, &CameraComponent)>,
+    camera: Query<(&ParentComponent, &UnrealTransform, &CameraComponent)>,
 ) {
     for (parent, spatial, _) in camera.iter() {
         if let Ok(mut movement) = movement.get_mut(parent.parent) {
@@ -224,7 +224,7 @@ fn update_controller_view(
         }
     }
 }
-fn rotate_camera(mut query: Query<(&mut TransformComponent, &mut CameraComponent)>) {
+fn rotate_camera(mut query: Query<(&mut UnrealTransform, &mut CameraComponent)>) {
     fn lerp(start: f32, end: f32, t: f32) -> f32 {
         start * (1.0 - t) + end * t
     }
@@ -265,7 +265,7 @@ fn spawn_camera(
             );
             (bindings().actor_fns.set_view_target)(actor);
             commands.spawn((
-                TransformComponent {
+                UnrealTransform {
                     position: pos,
                     ..Default::default()
                 },
@@ -281,7 +281,7 @@ fn spawn_camera(
 
 fn update_camera(
     mut query: Query<(Entity, &ParentComponent, &CameraComponent)>,
-    mut spatial_query: Query<&mut TransformComponent>,
+    mut spatial_query: Query<&mut UnrealTransform>,
 ) {
     for (entity, parent, camera) in query.iter_mut() {
         let spatial_parent = spatial_query.get(parent.parent).ok().cloned();

@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 bevy_ecs = "0.13"
-glam = "0.21"
+glam = "0.25"
 
 [build-dependencies]
 cbindgen = "0.24"
