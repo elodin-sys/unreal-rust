@@ -300,13 +300,13 @@ fn update_camera(
 pub struct MyModule;
 
 impl InitUserModule for MyModule {
-    fn initialize() -> Self {
+    fn init() -> Self {
         Self {}
     }
 }
 
 impl UserModule for MyModule {
-    fn initialize(&self, app: &mut App) {
+    fn init(&self, app: &mut App) {
         let mut registry = app
             .world
             .get_resource_or_insert_with(ReflectionRegistry::default);

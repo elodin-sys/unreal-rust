@@ -76,7 +76,7 @@ impl UnrealCore {
                 MinimalPlugins.set(ScheduleRunnerPlugin::run_once()),
                 CorePlugin,
             ));
-        user_module.initialize(&mut app);
+        user_module.init(&mut app);
         Self { app }
     }
 
@@ -783,6 +783,18 @@ impl<'w, 's> UnrealCommandExt for Commands<'w, 's> {
         class: ActorClass,
         transform: Transform,
     ) -> (EntityCommands<'_>, ActorPtr) {
+        let mut entity_cmds = self.spawn_empty();
+        let actor = entity_cmds.insert_actor(class, transform);
+        (entity_cmds, actor)
+    }
+}
+
+pub trait UnrealEntityCommandsExt {
+    fn insert_actor(&mut self, class: ActorClass, transform: Transform) -> ActorPtr;
+}
+
+impl UnrealEntityCommandsExt for EntityCommands<'_> {
+    fn insert_actor(&mut self, class: ActorClass, transform: Transform) -> ActorPtr {
         let actor = unsafe {
             (bindings().spawn_actor)(
                 class,
@@ -791,14 +803,14 @@ impl<'w, 's> UnrealCommandExt for Commands<'w, 's> {
                 transform.scale.into(),
             )
         };
-        let entity_cmds = self.spawn((
+        self.insert((
             transform,
             UnrealTransform::from(transform),
             ActorComponent {
                 actor: ActorPtr(actor),
             },
         ));
-        (entity_cmds, ActorPtr(actor))
+        ActorPtr(actor)
     }
 }
 

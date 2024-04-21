@@ -13,7 +13,7 @@ pub struct Global {
 }
 
 pub trait InitUserModule {
-    fn initialize() -> Self;
+    fn init() -> Self;
 }
 
 pub type EmptySystem = &'static dyn System<In = (), Out = ()>;
@@ -47,7 +47,7 @@ impl ReflectionRegistry {
 }
 
 pub trait UserModule {
-    fn initialize(&self, module: &mut App);
+    fn init(&self, module: &mut App);
 }
 pub static mut BINDINGS: Option<UnrealBindings> = None;
 
@@ -82,7 +82,7 @@ macro_rules! implement_unreal_module {
             let _ = $crate::log::init();
 
             let r = std::panic::catch_unwind(|| unsafe {
-                let module = Box::new(<$module as $crate::module::InitUserModule>::initialize());
+                let module = Box::new(<$module as $crate::module::InitUserModule>::init());
                 let core = $crate::core::UnrealCore::new(module.as_ref());
 
                 $crate::module::MODULE = Some($crate::module::Global { core, module });
