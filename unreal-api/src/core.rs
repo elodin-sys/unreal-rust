@@ -3,6 +3,7 @@ use bevy::MinimalPlugins;
 use bevy_ecs::schedule::ScheduleLabel;
 use bevy_ecs::{prelude::*, system::Command};
 use ffi::{ActorComponentPtr, ActorComponentType, Quaternion, UEventType};
+use std::collections::HashSet;
 use std::ffi::c_void;
 
 use crate::{
@@ -35,17 +36,21 @@ impl Plugin for CorePlugin {
             .insert_resource(Time::default())
             .insert_resource(Input::default())
             .insert_resource(UnrealApi::default())
-            // .add_stage(CoreStage::RegisterEvent)
-            // .add_stage_after(CoreStage::RegisterEvent, CoreStage::PreUpdate)
-            // .add_stage_after(CoreStage::PreUpdate, CoreStage::Update)
-            // .add_stage_after(CoreStage::Update, CoreStage::PostUpdate)
+            .insert_resource(SpawnedActors::default())
             // TODO: Order matters here. Needs to be defined after the stages
             .add_event::<OnActorBeginOverlapEvent>()
             .add_event::<OnActorEndOverlapEvent>()
             .add_event::<ActorHitEvent>()
             .add_event::<ActorSpawnedEvent>()
             .add_event::<ActorDestroyEvent>()
-            .add_systems(First, (process_actor_spawned, process_actor_destroyed))
+            .add_systems(
+                First,
+                (
+                    process_bevy_spawned_actor,
+                    process_actor_spawned.after(process_bevy_spawned_actor),
+                    process_actor_destroyed,
+                ),
+            )
             .add_systems(
                 PreUpdate,
                 (
@@ -64,22 +69,18 @@ impl Plugin for CorePlugin {
 impl UnrealCore {
     pub fn new(user_module: &dyn UserModule) -> Self {
         let mut app = App::new();
-        println!("Creating UnrealCore");
         app.insert_resource(ReflectionRegistry::default())
             .add_plugins((
                 MinimalPlugins.set(ScheduleRunnerPlugin::run_once()),
                 CorePlugin,
             ));
-        //app.update();
         user_module.initialize(&mut app);
         Self { app }
     }
 
     pub fn begin_play(&mut self, user_module: &dyn UserModule) {
         *self = Self::new(user_module);
-        println!("begin play");
         self.app.update();
-        //self.module.startup.run_once(&mut self.module.world);
     }
     pub fn tick(&mut self, dt: f32) {
         if let Some(mut frame) = self.app.world.get_resource_mut::<Frame>() {
@@ -145,14 +146,12 @@ pub unsafe extern "C" fn unreal_event(ty: *const UEventType, data: *const c_void
     if let Some(global) = crate::module::MODULE.as_mut() {
         match *ty {
             UEventType::ActorSpawned => {
-                println!("Actor spawned");
                 let actor_spawned_event = data as *const ffi::ActorSpawnedEvent;
                 global.core.app.world.send_event(ActorSpawnedEvent {
                     actor: ActorPtr((*actor_spawned_event).actor),
                 });
             }
             UEventType::ActorBeginOverlap => {
-                println!("Actor begin overlap");
                 let overlap = data as *const ffi::ActorBeginOverlap;
                 global.core.app.world.send_event(OnActorBeginOverlapEvent {
                     overlapped_actor: ActorPtr((*overlap).overlapped_actor),
@@ -160,7 +159,6 @@ pub unsafe extern "C" fn unreal_event(ty: *const UEventType, data: *const c_void
                 });
             }
             UEventType::ActorEndOverlap => {
-                println!("Actor end overlap");
                 let overlap = data as *const ffi::ActorEndOverlap;
                 global.core.app.world.send_event(OnActorEndOverlapEvent {
                     overlapped_actor: ActorPtr((*overlap).overlapped_actor),
@@ -168,7 +166,6 @@ pub unsafe extern "C" fn unreal_event(ty: *const UEventType, data: *const c_void
                 });
             }
             UEventType::ActorOnHit => {
-                println!("Actor on hit");
                 let hit = data as *const ffi::ActorHitEvent;
                 global.core.app.world.send_event(ActorHitEvent {
                     self_actor: ActorPtr((*hit).self_actor),
@@ -177,7 +174,6 @@ pub unsafe extern "C" fn unreal_event(ty: *const UEventType, data: *const c_void
                 });
             }
             UEventType::ActorDestroy => {
-                println!("Actor destroy");
                 let destroy = data as *const ffi::ActorDestroyEvent;
                 global.core.app.world.send_event(ActorDestroyEvent {
                     actor: ActorPtr((*destroy).actor),
@@ -708,8 +704,8 @@ fn download_transform_from_unreal(mut query: Query<(&ActorComponent, &mut Transf
     }
 }
 
-fn upload_transform_to_unreal(query: Query<(&ActorComponent, &TransformComponent)>) {
-    for (actor, transform) in query.iter() {
+fn upload_transform_to_unreal(query: Query<(Entity, &ActorComponent, &TransformComponent)>) {
+    for (entity, actor, transform) in query.iter() {
         let is_moveable = unsafe { (bindings().actor_fns.is_moveable)(actor.actor.0) } > 0;
         if !is_moveable {
             continue;
@@ -756,23 +752,31 @@ fn process_actor_destroyed(
     mut api: ResMut<UnrealApi>,
     mut reader: EventReader<ActorDestroyEvent>,
     mut commands: Commands,
+    mut spawned_actors: ResMut<SpawnedActors>,
 ) {
     for event in reader.read() {
         if let Some(entity) = api.actor_to_entity.remove(&event.actor) {
             commands.add(Despawn { entity });
         }
+        spawned_actors.0.remove(&event.actor);
     }
 }
+
+#[derive(Resource, Default)]
+struct SpawnedActors(HashSet<ActorPtr>);
 
 fn process_actor_spawned(
     mut api: ResMut<UnrealApi>,
     mut reader: EventReader<ActorSpawnedEvent>,
     mut commands: Commands,
+    mut spawned_actors: ResMut<SpawnedActors>,
 ) {
     unsafe {
         if let Some(global) = crate::module::MODULE.as_mut() {
             for &ActorSpawnedEvent { actor } in reader.read() {
-                println!("actor spawned event");
+                if spawned_actors.0.contains(&actor) {
+                    continue;
+                }
                 let mut entity_cmds = commands.spawn_empty();
 
                 let mut len = 0;
@@ -788,7 +792,6 @@ fn process_actor_spawned(
                     uuids.as_mut_ptr(),
                     &mut len,
                 );
-                println!("len {}", len);
                 // We might have gotten back fewer uuids, so we truncate
                 uuids.truncate(len);
 
@@ -796,7 +799,6 @@ fn process_actor_spawned(
                 // them to the entity
                 for uuid in uuids {
                     let uuid = from_ffi_uuid(uuid);
-                    println!("spawn {:?}", uuid);
                     let reflection_registry = global
                         .core
                         .app
@@ -835,7 +837,17 @@ fn process_actor_spawned(
                         id: entity.to_bits(),
                     },
                 );
+                spawned_actors.0.insert(actor);
             }
         }
+    }
+}
+
+fn process_bevy_spawned_actor(
+    query: Query<&ActorComponent, Added<ActorComponent>>,
+    mut spawned_actors: ResMut<SpawnedActors>,
+) {
+    for actor in query.iter() {
+        spawned_actors.0.insert(actor.actor);
     }
 }
