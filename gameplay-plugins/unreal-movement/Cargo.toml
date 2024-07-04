@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 unreal-api = { path = "../../unreal-api"}
 unreal-reflect = { path = "../../unreal-reflect" }
-bevy_ecs = "0.13"
-bevy.version = "0.13"
+bevy_ecs = "0.14"
+bevy.version = "0.14"
 bevy.default-features = false
 log = "0.4"

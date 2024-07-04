@@ -10,6 +10,6 @@ license = "MIT OR Apache-2.0"
 
 uuid = { version = "1", features = ["v4", "serde"] }
 unreal-ffi = { path = "../unreal-ffi" }
-bevy_ecs = "0.13"
+bevy_ecs = "0.14"
 log = "0.4"
-glam = "0.25"
+glam = "0.27"

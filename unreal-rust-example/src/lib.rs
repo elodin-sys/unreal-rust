@@ -308,7 +308,7 @@ impl InitUserModule for MyModule {
 impl UserModule for MyModule {
     fn init(&self, app: &mut App) {
         let mut registry = app
-            .world
+            .world_mut()
             .get_resource_or_insert_with(ReflectionRegistry::default);
         registry.register::<CharacterSoundsComponent>();
         registry.register::<PlaySoundOnImpactComponent>();

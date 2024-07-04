@@ -454,7 +454,7 @@ pub struct MovementPlugin;
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
         let mut registry = app
-            .world
+            .world_mut()
             .get_resource_or_insert_with(ReflectionRegistry::default);
         registry.register::<MovementComponent>();
         registry.register::<CharacterConfigComponent>();

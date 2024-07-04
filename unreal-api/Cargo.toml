@@ -5,10 +5,10 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-bevy_ecs = "0.13"
-bevy.version = "0.13"
+bevy_ecs = "0.14"
+bevy.version = "0.14"
 bevy.default-features = false
-glam = "0.25"
+glam = "0.27"
 log = { version = "0.4.14", features =["std"] }
 unreal-api-derive= { path = "../unreal-api-derive" }
 unreal-reflect= { path = "../unreal-reflect" }

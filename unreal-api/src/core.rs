@@ -1,9 +1,11 @@
 use bevy::app::{App, First, Plugin, PluginGroup, PostUpdate, PreUpdate, ScheduleRunnerPlugin};
+use bevy::prelude::Commands;
 use bevy::transform::components::Transform;
 use bevy::MinimalPlugins;
+use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::ScheduleLabel;
 use bevy_ecs::system::EntityCommands;
-use bevy_ecs::{prelude::*, system::Command};
+use bevy_ecs::world::Command;
 use ffi::{ActorClass, ActorComponentPtr, ActorComponentType, Quaternion, UEventType};
 use std::collections::HashSet;
 use std::ffi::c_void;
@@ -26,7 +28,7 @@ pub struct CorePlugin;
 impl Plugin for CorePlugin {
     fn build(&self, app: &mut App) {
         let mut registry = app
-            .world
+            .world_mut()
             .get_resource_or_insert_with(ReflectionRegistry::default);
         registry.register::<UnrealTransform>();
         registry.register::<ActorComponent>();
@@ -85,14 +87,14 @@ impl UnrealCore {
         self.app.update();
     }
     pub fn tick(&mut self, dt: f32) {
-        if let Some(mut frame) = self.app.world.get_resource_mut::<Frame>() {
+        if let Some(mut frame) = self.app.world_mut().get_resource_mut::<Frame>() {
             frame.dt = dt;
         }
-        if let Some(mut time) = self.app.world.get_resource_mut::<Time>() {
+        if let Some(mut time) = self.app.world_mut().get_resource_mut::<Time>() {
             time.time += dt as f64;
         }
         self.app.update();
-        self.app.world.clear_trackers();
+        self.app.world_mut().clear_trackers();
     }
 }
 
@@ -101,7 +103,7 @@ pub unsafe extern "C" fn retrieve_uuids(ptr: *mut ffi::Uuid, len: *mut usize) {
         let reflection_registry = global
             .core
             .app
-            .world
+            .world_mut()
             .get_resource::<ReflectionRegistry>()
             .expect("reflection registry not found");
         if ptr.is_null() {
@@ -149,27 +151,35 @@ pub unsafe extern "C" fn unreal_event(ty: *const UEventType, data: *const c_void
         match *ty {
             UEventType::ActorSpawned => {
                 let actor_spawned_event = data as *const ffi::ActorSpawnedEvent;
-                global.core.app.world.send_event(ActorSpawnedEvent {
+                global.core.app.world_mut().send_event(ActorSpawnedEvent {
                     actor: ActorPtr((*actor_spawned_event).actor),
                 });
             }
             UEventType::ActorBeginOverlap => {
                 let overlap = data as *const ffi::ActorBeginOverlap;
-                global.core.app.world.send_event(OnActorBeginOverlapEvent {
-                    overlapped_actor: ActorPtr((*overlap).overlapped_actor),
-                    other: ActorPtr((*overlap).other),
-                });
+                global
+                    .core
+                    .app
+                    .world_mut()
+                    .send_event(OnActorBeginOverlapEvent {
+                        overlapped_actor: ActorPtr((*overlap).overlapped_actor),
+                        other: ActorPtr((*overlap).other),
+                    });
             }
             UEventType::ActorEndOverlap => {
                 let overlap = data as *const ffi::ActorEndOverlap;
-                global.core.app.world.send_event(OnActorEndOverlapEvent {
-                    overlapped_actor: ActorPtr((*overlap).overlapped_actor),
-                    other: ActorPtr((*overlap).other),
-                });
+                global
+                    .core
+                    .app
+                    .world_mut()
+                    .send_event(OnActorEndOverlapEvent {
+                        overlapped_actor: ActorPtr((*overlap).overlapped_actor),
+                        other: ActorPtr((*overlap).other),
+                    });
             }
             UEventType::ActorOnHit => {
                 let hit = data as *const ffi::ActorHitEvent;
-                global.core.app.world.send_event(ActorHitEvent {
+                global.core.app.world_mut().send_event(ActorHitEvent {
                     self_actor: ActorPtr((*hit).self_actor),
                     other: ActorPtr((*hit).other),
                     normal_impulse: (*hit).normal_impulse.into(),
@@ -177,7 +187,7 @@ pub unsafe extern "C" fn unreal_event(ty: *const UEventType, data: *const c_void
             }
             UEventType::ActorDestroy => {
                 let destroy = data as *const ffi::ActorDestroyEvent;
-                global.core.app.world.send_event(ActorDestroyEvent {
+                global.core.app.world_mut().send_event(ActorDestroyEvent {
                     actor: ActorPtr((*destroy).actor),
                 });
             }
@@ -265,14 +275,14 @@ fn get_field_value(uuid: ffi::Uuid, entity: ffi::Entity, idx: u32) -> Option<Ref
         let reflection_registry = global
             .core
             .app
-            .world
+            .world()
             .get_resource::<ReflectionRegistry>()
             .expect("reflection registry not found");
 
         let reflect = reflection_registry.reflect.get(&uuid)?;
 
         let entity = Entity::try_from_bits(entity.id).ok()?;
-        reflect.get_field_value(&global.core.app.world, entity, idx)
+        reflect.get_field_value(&global.core.app.world(), entity, idx)
     }
 }
 
@@ -283,7 +293,7 @@ unsafe extern "C" fn number_of_fields(uuid: ffi::Uuid, out: *mut u32) -> u32 {
         let reflection_registry = global
             .core
             .app
-            .world
+            .world()
             .get_resource::<ReflectionRegistry>()
             .expect("reflection registry not found");
 
@@ -307,7 +317,7 @@ unsafe extern "C" fn get_type_name(uuid: ffi::Uuid, out: *mut ffi::Utf8Str) -> u
         let reflection_registry = global
             .core
             .app
-            .world
+            .world()
             .get_resource::<ReflectionRegistry>()
             .expect("reflection registry not found");
 
@@ -331,13 +341,13 @@ unsafe extern "C" fn has_component(entity: ffi::Entity, uuid: ffi::Uuid) -> u32 
         let reflection_registry = global
             .core
             .app
-            .world
+            .world()
             .get_resource::<ReflectionRegistry>()
             .expect("reflection registry not found");
 
         let reflect = reflection_registry.reflect.get(&uuid)?;
         let entity = Entity::try_from_bits(entity.id).ok()?;
-        Some(reflect.has_component(&global.core.app.world, entity) as u32)
+        Some(reflect.has_component(&global.core.app.world(), entity) as u32)
     }
     let result = std::panic::catch_unwind(|| has_component(entity, uuid).unwrap_or(0));
     result.unwrap_or(0)
@@ -350,7 +360,7 @@ unsafe extern "C" fn is_editor_component(uuid: ffi::Uuid) -> u32 {
         let reflection_registry = global
             .core
             .app
-            .world
+            .world()
             .get_resource::<ReflectionRegistry>()
             .expect("reflection registry not found");
 
@@ -376,7 +386,7 @@ unsafe extern "C" fn get_field_name(uuid: ffi::Uuid, idx: u32, out: *mut ffi::Ut
         let reflection_registry = global
             .core
             .app
-            .world
+            .world()
             .get_resource::<ReflectionRegistry>()
             .expect("reflection registry not found");
 
@@ -404,7 +414,7 @@ unsafe extern "C" fn get_field_type(
         let reflection_registry = global
             .core
             .app
-            .world
+            .world()
             .get_resource::<ReflectionRegistry>()
             .expect("reflection registry not found");
 
@@ -872,7 +882,7 @@ fn process_actor_spawned(
                     let reflection_registry = global
                         .core
                         .app
-                        .world
+                        .world()
                         .get_resource::<ReflectionRegistry>()
                         .expect("reflection registry not found");
                     if let Some(insert) = reflection_registry.insert_editor_component.get(&uuid) {

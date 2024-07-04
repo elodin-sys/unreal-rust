@@ -159,7 +159,7 @@ pub fn reflect_derive(ast: &DeriveInput) -> proc_macro2::TokenStream {
                 const TYPE: unreal_api::registry::ReflectType = unreal_api::registry::ReflectType::Composite;
             }
             impl unreal_api::ecs::component::Component for #struct_ident {
-                type Storage = unreal_api::ecs::component::TableStorage;
+                const STORAGE_TYPE: unreal_api::ecs::component::StorageType = unreal_api::ecs::component::StorageType::Table;
             }
             pub struct #insert_struct_ident;
             #insert_component
